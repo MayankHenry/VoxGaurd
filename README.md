@@ -46,10 +46,47 @@ not model accuracy. Day 2 is dataset acquisition (ASVspoof subset +
 generating our own TTS samples) so we have real real-vs-synthetic pairs
 to extract features from.
 
-### Day 2 — (not started)
-Planned: acquire ASVspoof dataset subset, generate synthetic voice
-samples with 1-2 open TTS/voice-cloning tools, build the labeled
-dataset folder structure (`data/raw/real/`, `data/raw/synthetic/`).
+### Day 2 — Dataset Pipeline (Synthetic Class + Real-Class Sourcing Plan) ✅
+
+**Goal:** Get labeled audio data flowing through the Day 1 feature
+extractor into a manifest that Day 4-5 model training can consume.
+
+**Constraint hit and handled:** this sandbox's network is restricted
+to a small domain allowlist (GitHub, PyPI, Ubuntu mirrors) — it
+cannot reach ASVspoof/VCTK/Kaggle hosts directly. Rather than fake
+this, the synthetic side was built fully offline and the real side
+was made an explicit, documented next step for a machine with normal
+internet access.
+
+**Done:**
+- Installed `espeak-ng` (offline TTS engine, via apt — no external
+  dataset host needed)
+- `scripts/generate_synthetic_samples.py` — generates AI-voice
+  samples with varied voice/pitch/speaking-rate combinations across
+  10 different sentences (scam-call-style phrasing, matching the
+  project's real-world framing). **Run and verified: 10 synthetic
+  `.wav` files generated successfully.**
+- `data/raw/real/README.md` — concrete instructions for sourcing the
+  real-speech class: ASVspoof2019 or VCTK download links, or
+  recording team members' own voices as a fast unblock option
+- `scripts/build_manifest.py` — scans `data/raw/real/` +
+  `data/raw/synthetic/`, runs each file through Day 1's
+  `extract_features()`, writes `data/processed/manifest.csv`.
+  **Run and verified:** correctly detected 0 real / 10 synthetic
+  samples, printed a clear warning about the missing real class, and
+  still wrote a valid 10-row manifest with real feature values (not
+  NaNs) — confirming Day 1 → Day 2 integration works end to end.
+
+**Known limitation carried into Day 3:** manifest currently has
+synthetic-only data (0 real samples). **Action item for the team:**
+before Day 4 (model training), at least one of you needs to either
+record ~30-40 short voice samples, or download a small ASVspoof/VCTK
+subset on a personal machine and drop the files into
+`backend/data/raw/real/` — see the README there for exact steps.
+Re-run `python scripts/build_manifest.py` afterward to regenerate the
+manifest with both classes.
+
+### Day 3 — (not started)
 
 ## Tech Stack
 - Backend: FastAPI, librosa/torchaudio for audio processing
