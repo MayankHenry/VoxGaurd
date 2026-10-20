@@ -1,62 +1,119 @@
 """
-VoxGuard backend entrypoint.
+VoxGuard API.
 
-Day 1 scope: FastAPI skeleton with a health check route and an audio
-upload stub route. Feature extraction and model inference are wired
-in on later days once the dataset pipeline (see app/features.py) is
-validated.
+Endpoints
+  GET  /health                 liveness + whether a trained model is loaded
+  GET  /model/info             model version, selection + evaluation report, limitations
+  POST /predict                upload audio -> verdict (audio deleted right after analysis)
+  POST /upload                 store audio, returns sample_id
+  POST /predict/{sample_id}    analyse a previously uploaded sample (404 if unknown)
+  GET  /history                recent predictions (results only, never audio)
+  GET  /stats                  latency statistics (for the p95 NFR)
+
+Error codes: 400 bad input (type / duration), 404 unknown sample, 413 file too large,
+422 undecodable or silent audio, 503 model not trained yet.
 """
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 import shutil
+import tempfile
 import uuid
 from pathlib import Path
 
-APP_VERSION = "0.1.0-day1"
-UPLOAD_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+import librosa
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
-ALLOWED_EXTENSIONS = {".wav", ".mp3", ".m4a", ".flac"}
+from . import config, db
+from .inference import ModelNotReady, service
 
-app = FastAPI(title="VoxGuard API", version=APP_VERSION)
+APP_VERSION = "0.5.0"
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # tighten before deployment
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="VoxGuard API", version=APP_VERSION,
+              description="Detects whether an audio clip is human speech or AI-generated/synthetic.")
+app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
 
+# ---------- helpers ----------
+def _save_upload(file: UploadFile, dest_dir: Path, stem: str) -> Path:
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in config.ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Unsupported file type '{ext}'. Allowed: {sorted(config.ALLOWED_EXTENSIONS)}")
+    dest = dest_dir / f"{stem}{ext}"
+    size = 0
+    with dest.open("wb") as out:
+        while chunk := file.file.read(1024 * 1024):
+            size += len(chunk)
+            if size > config.MAX_UPLOAD_BYTES:
+                out.close()
+                dest.unlink(missing_ok=True)
+                raise HTTPException(413, f"File too large (max {config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB).")
+            out.write(chunk)
+    return dest
+
+
+def _analyse(path: Path, display_name: str) -> dict:
+    try:
+        duration = librosa.get_duration(path=str(path))
+    except Exception:
+        raise HTTPException(422, "Could not decode audio file.")
+    if duration < config.MIN_DURATION_SEC:
+        raise HTTPException(400, f"Audio too short ({duration:.1f}s). Minimum is {config.MIN_DURATION_SEC}s.")
+    if duration > config.MAX_DURATION_SEC:
+        raise HTTPException(400, f"Audio too long ({duration:.1f}s). Maximum is {config.MAX_DURATION_SEC}s.")
+    try:
+        result = service.predict_file(str(path))
+    except ModelNotReady as e:
+        raise HTTPException(503, str(e))
+    except RuntimeError as e:
+        raise HTTPException(422, str(e))
+    result["filename"] = display_name
+    result["id"] = db.log_prediction(display_name, result["duration_sec"], result["verdict"], result["label"],
+                                     result["synthetic_probability"], result["latency_ms"])
+    return result
+
+
+# ---------- routes ----------
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": APP_VERSION}
+    return {"status": "ok", "version": APP_VERSION, "model_ready": service.ready}
+
+
+@app.get("/model/info")
+def model_info():
+    return service.info()
+
+
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    """One-shot analysis. The uploaded audio is deleted immediately after analysis."""
+    with tempfile.TemporaryDirectory() as td:
+        path = _save_upload(file, Path(td), "clip")
+        return _analyse(path, file.filename or path.name)
 
 
 @app.post("/upload")
 async def upload_audio(file: UploadFile = File(...)):
-    """
-    Day 1: accept an audio file and store it under data/raw/uploads.
-    Returns a sample_id used by later pipeline stages (feature
-    extraction, inference) once those are implemented.
-    """
-    ext = Path(file.filename).suffix.lower()
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type '{ext}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
-        )
-
     sample_id = str(uuid.uuid4())
-    dest = UPLOAD_DIR / f"{sample_id}{ext}"
+    dest = _save_upload(file, config.UPLOAD_DIR, sample_id)
+    return {"sample_id": sample_id, "filename": file.filename, "status": "received", "stored_as": dest.name}
 
-    with dest.open("wb") as out_file:
-        shutil.copyfileobj(file.file, out_file)
 
-    return {
-        "sample_id": sample_id,
-        "filename": file.filename,
-        "stored_path": str(dest),
-        "status": "received",
-        "note": "Feature extraction + classification not yet wired up (Day 2+).",
-    }
+@app.post("/predict/{sample_id}")
+def predict_stored(sample_id: str):
+    try:
+        uuid.UUID(sample_id)  # also blocks path traversal
+    except ValueError:
+        raise HTTPException(404, "Unknown sample_id.")
+    matches = list(config.UPLOAD_DIR.glob(f"{sample_id}.*"))
+    if not matches:
+        raise HTTPException(404, "Unknown sample_id.")
+    return _analyse(matches[0], matches[0].name)
+
+
+@app.get("/history")
+def history(limit: int = Query(20, ge=1, le=200)):
+    return {"items": db.recent_predictions(limit)}
+
+
+@app.get("/stats")
+def stats():
+    return db.latency_stats()

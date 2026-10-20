@@ -1,91 +1,72 @@
 """
-Day 2: Build the labeled feature manifest.
+Build data/processed/manifest.csv: one row per audio file = metadata + feature vector.
 
-Scans data/raw/real/ and data/raw/synthetic/, runs each file through
-the Day 1 feature extraction pipeline (app/features.py), and writes
-a flat CSV where each row is one audio sample's feature vector plus
-its label. This CSV is the direct input for Day 4-5 model training —
-keeping feature extraction and model training decoupled means we can
-re-run this any time new samples are dropped into either folder
-without touching training code.
+Filename conventions (parsed to get generator + utterance group):
+  real_<speaker>_<uttid>.wav          -> label real,      family human
+  synth_<family>_<variant>_<uttid>.wav -> label synthetic, family <family>
+`group` = utterance id; training uses it so the same sentence never appears in both
+train and test folds (prevents leakage).
 
-Usage:
-    python scripts/build_manifest.py
+Usage:  python scripts/build_manifest.py
 """
 import sys
-import csv
 from pathlib import Path
+import pandas as pd
+from joblib import Parallel, delayed
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from app.features import extract_features
+from app import config
+from app.features import extract_features, FEATURE_NAMES
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-REAL_DIR = BACKEND_DIR / "data" / "raw" / "real"
-SYNTHETIC_DIR = BACKEND_DIR / "data" / "raw" / "synthetic"
-OUTPUT_CSV = BACKEND_DIR / "data" / "processed" / "manifest.csv"
-
-AUDIO_EXTENSIONS = {".wav", ".flac", ".mp3"}
+EXTS = {".wav", ".flac", ".mp3"}
 
 
-def collect_files(directory: Path, label: str):
-    if not directory.exists():
-        return []
-    return [(f, label) for f in sorted(directory.iterdir()) if f.suffix.lower() in AUDIO_EXTENSIONS]
+def parse(path: Path, label: str):
+    stem = path.stem
+    if label == "synthetic" and stem.startswith("synth_"):
+        parts = stem.split("_", 3)
+        if len(parts) == 4:
+            return parts[1], parts[2], parts[3]
+    if label == "real" and stem.startswith("real_"):
+        parts = stem.split("_", 2)
+        if len(parts) == 3:
+            return "human", parts[1], parts[2]
+    return ("human" if label == "real" else "unknown"), "", stem
 
 
-def build_manifest():
-    real_files = collect_files(REAL_DIR, "real")
-    synthetic_files = collect_files(SYNTHETIC_DIR, "synthetic")
+def one(path: Path, label: str):
+    try:
+        feats = extract_features(str(path))
+    except RuntimeError as e:
+        return None, f"{path.name}: {e}"
+    family, variant, group = parse(path, label)
+    row = {"filename": path.name, "label": label, "family": family, "variant": variant, "group": group}
+    row.update(dict(zip(FEATURE_NAMES, feats.to_vector().tolist())))
+    row["duration_sec"] = feats.duration_sec
+    return row, None
 
-    print(f"Found {len(real_files)} real samples, {len(synthetic_files)} synthetic samples.")
 
-    if len(real_files) == 0:
-        print(
-            "\nWARNING: no real samples found in data/raw/real/. "
-            "See data/raw/real/README.md for how to add them. "
-            "Proceeding with synthetic-only manifest for now — "
-            "this is NOT enough to train a real classifier, only to "
-            "validate the pipeline end to end."
-        )
+def main():
+    jobs = [(p, "real") for p in sorted(config.REAL_DIR.iterdir()) if p.suffix.lower() in EXTS]
+    jobs += [(p, "synthetic") for p in sorted(config.SYNTH_DIR.iterdir()) if p.suffix.lower() in EXTS]
+    n_real = sum(1 for _, l in jobs if l == "real")
+    print(f"Found {n_real} real, {len(jobs) - n_real} synthetic files. Extracting features ...")
+    if n_real == 0:
+        print("WARNING: no real samples - see scripts/fetch_dev_real_samples.py / data/raw/real/README.md")
 
-    all_files = real_files + synthetic_files
-    rows = []
-    failed = []
-
-    for file_path, label in all_files:
-        try:
-            features = extract_features(str(file_path))
-            row = {"filename": file_path.name, "label": label}
-            row.update({f"mfcc_mean_{i}": v for i, v in enumerate(features.mfcc_mean)})
-            row.update({f"mfcc_std_{i}": v for i, v in enumerate(features.mfcc_std)})
-            row["spectral_flatness_mean"] = features.spectral_flatness_mean
-            row["spectral_centroid_mean"] = features.spectral_centroid_mean
-            row["spectral_bandwidth_mean"] = features.spectral_bandwidth_mean
-            row["pitch_mean"] = features.pitch_mean
-            row["pitch_std"] = features.pitch_std
-            row["duration_sec"] = features.duration_sec
-            rows.append(row)
-        except RuntimeError as e:
-            failed.append((file_path.name, str(e)))
-            print(f"SKIPPED {file_path.name}: {e}")
-
+    results = Parallel(n_jobs=-1)(delayed(one)(p, l) for p, l in jobs)
+    rows = [r for r, _ in results if r]
+    for _, err in results:
+        if err:
+            print("SKIPPED", err)
     if not rows:
-        print("No samples successfully processed. Manifest not written.")
-        return
-
-    OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0].keys())
-    with OUTPUT_CSV.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-    print(f"\nManifest written: {OUTPUT_CSV}")
-    print(f"  Total samples: {len(rows)}  (real: {len(real_files) - len([x for x in failed if 'real' in x[0]])}, "
-          f"synthetic: {len(synthetic_files) - len([x for x in failed if 'synth' in x[0]])})")
-    if failed:
-        print(f"  Failed/skipped: {len(failed)}")
+        print("Nothing processed; manifest not written.")
+        sys.exit(1)
+    df = pd.DataFrame(rows)
+    df.to_csv(config.MANIFEST_PATH, index=False)
+    print(f"Manifest written: {config.MANIFEST_PATH}")
+    print(df.groupby(["label", "family"]).size().to_string())
 
 
 if __name__ == "__main__":
-    build_manifest()
+    main()

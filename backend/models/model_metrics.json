@@ -1,0 +1,720 @@
+{
+  "version": "20261009-xgboost-all-n303",
+  "trained_at": "2026-10-09T05:04:23.935819+00:00",
+  "selected": {
+    "model": "xgboost",
+    "feature_set": "all",
+    "selection_score": 0.8581
+  },
+  "dataset": {
+    "n_samples": 303,
+    "by_label": {
+      "synthetic": 256,
+      "real": 47
+    },
+    "by_family": {
+      "flite": 128,
+      "espeak": 64,
+      "festival": 64,
+      "human": 47
+    },
+    "real_sources": {
+      "ljspeech": 32,
+      "sbspk1": 6,
+      "sbspk2": 6,
+      "sbeng1": 1,
+      "sbeng5": 1,
+      "sbfr2": 1
+    }
+  },
+  "selection_metric": "0.5*LOSO + 0.5*LOEO (see script docstring)",
+  "all_candidates": {
+    "random_forest|all": {
+      "selection_score": 0.8323,
+      "loso": {
+        "score": 0.7461,
+        "macro_recall_real": 0.4922,
+        "recall_synthetic": 1.0,
+        "per_speaker": {
+          "ljspeech": {
+            "recall_real": 0.9688,
+            "recall_synthetic": 1.0,
+            "n_real": 32
+          },
+          "other_speakers": {
+            "recall_real": 0.0,
+            "recall_synthetic": 1.0,
+            "n_real": 3
+          },
+          "sbspk1": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          },
+          "sbspk2": {
+            "recall_real": 0.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          }
+        }
+      },
+      "loeo": {
+        "unseen_espeak": {
+          "balanced_accuracy": 0.9574,
+          "recall_real": 0.9149,
+          "recall_synthetic": 1.0,
+          "n_test": 111,
+          "f1_synthetic": 0.9697,
+          "roc_auc": 0.9844,
+          "confusion_matrix(real,synthetic)": [
+            [
+              43,
+              4
+            ],
+            [
+              0,
+              64
+            ]
+          ]
+        },
+        "unseen_festival": {
+          "balanced_accuracy": 0.9574,
+          "recall_real": 0.9149,
+          "recall_synthetic": 1.0,
+          "n_test": 111,
+          "f1_synthetic": 0.9697,
+          "roc_auc": 0.9814,
+          "confusion_matrix(real,synthetic)": [
+            [
+              43,
+              4
+            ],
+            [
+              0,
+              64
+            ]
+          ]
+        },
+        "unseen_flite": {
+          "balanced_accuracy": 0.8409,
+          "recall_real": 0.9787,
+          "recall_synthetic": 0.7031,
+          "n_test": 175,
+          "f1_synthetic": 0.8219,
+          "roc_auc": 0.9576,
+          "confusion_matrix(real,synthetic)": [
+            [
+              46,
+              1
+            ],
+            [
+              38,
+              90
+            ]
+          ]
+        }
+      },
+      "grouped_cv_optimistic": {
+        "balanced_accuracy": 0.9574,
+        "recall_real": 0.9149,
+        "recall_synthetic": 1.0,
+        "n_test": 303,
+        "f1_synthetic": 0.9922,
+        "roc_auc": 1.0,
+        "confusion_matrix(real,synthetic)": [
+          [
+            43,
+            4
+          ],
+          [
+            0,
+            256
+          ]
+        ]
+      }
+    },
+    "xgboost|all": {
+      "selection_score": 0.8581,
+      "loso": {
+        "score": 0.8086,
+        "macro_recall_real": 0.6172,
+        "recall_synthetic": 1.0,
+        "per_speaker": {
+          "ljspeech": {
+            "recall_real": 0.9688,
+            "recall_synthetic": 1.0,
+            "n_real": 32
+          },
+          "other_speakers": {
+            "recall_real": 0.3333,
+            "recall_synthetic": 1.0,
+            "n_real": 3
+          },
+          "sbspk1": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          },
+          "sbspk2": {
+            "recall_real": 0.1667,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          }
+        }
+      },
+      "loeo": {
+        "unseen_espeak": {
+          "balanced_accuracy": 0.9574,
+          "recall_real": 0.9149,
+          "recall_synthetic": 1.0,
+          "n_test": 111,
+          "f1_synthetic": 0.9697,
+          "roc_auc": 0.9651,
+          "confusion_matrix(real,synthetic)": [
+            [
+              43,
+              4
+            ],
+            [
+              0,
+              64
+            ]
+          ]
+        },
+        "unseen_festival": {
+          "balanced_accuracy": 0.9468,
+          "recall_real": 0.8936,
+          "recall_synthetic": 1.0,
+          "n_test": 111,
+          "f1_synthetic": 0.9624,
+          "roc_auc": 0.9661,
+          "confusion_matrix(real,synthetic)": [
+            [
+              42,
+              5
+            ],
+            [
+              0,
+              64
+            ]
+          ]
+        },
+        "unseen_flite": {
+          "balanced_accuracy": 0.8186,
+          "recall_real": 0.9574,
+          "recall_synthetic": 0.6797,
+          "n_test": 175,
+          "f1_synthetic": 0.8018,
+          "roc_auc": 0.8426,
+          "confusion_matrix(real,synthetic)": [
+            [
+              45,
+              2
+            ],
+            [
+              41,
+              87
+            ]
+          ]
+        }
+      },
+      "grouped_cv_optimistic": {
+        "balanced_accuracy": 0.9535,
+        "recall_real": 0.9149,
+        "recall_synthetic": 0.9922,
+        "n_test": 303,
+        "f1_synthetic": 0.9883,
+        "roc_auc": 0.9934,
+        "confusion_matrix(real,synthetic)": [
+          [
+            43,
+            4
+          ],
+          [
+            2,
+            254
+          ]
+        ]
+      }
+    },
+    "logistic_regression|all": {
+      "selection_score": 0.8388,
+      "loso": {
+        "score": 0.9167,
+        "macro_recall_real": 0.8333,
+        "recall_synthetic": 1.0,
+        "per_speaker": {
+          "ljspeech": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 32
+          },
+          "other_speakers": {
+            "recall_real": 0.3333,
+            "recall_synthetic": 1.0,
+            "n_real": 3
+          },
+          "sbspk1": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          },
+          "sbspk2": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          }
+        }
+      },
+      "loeo": {
+        "unseen_espeak": {
+          "balanced_accuracy": 0.6272,
+          "recall_real": 0.9574,
+          "recall_synthetic": 0.2969,
+          "n_test": 111,
+          "f1_synthetic": 0.4471,
+          "roc_auc": 0.9053,
+          "confusion_matrix(real,synthetic)": [
+            [
+              45,
+              2
+            ],
+            [
+              45,
+              19
+            ]
+          ]
+        },
+        "unseen_festival": {
+          "balanced_accuracy": 0.924,
+          "recall_real": 0.9574,
+          "recall_synthetic": 0.8906,
+          "n_test": 111,
+          "f1_synthetic": 0.9268,
+          "roc_auc": 0.9757,
+          "confusion_matrix(real,synthetic)": [
+            [
+              45,
+              2
+            ],
+            [
+              7,
+              57
+            ]
+          ]
+        },
+        "unseen_flite": {
+          "balanced_accuracy": 0.7315,
+          "recall_real": 0.9787,
+          "recall_synthetic": 0.4844,
+          "n_test": 175,
+          "f1_synthetic": 0.6492,
+          "roc_auc": 0.7613,
+          "confusion_matrix(real,synthetic)": [
+            [
+              46,
+              1
+            ],
+            [
+              66,
+              62
+            ]
+          ]
+        }
+      },
+      "grouped_cv_optimistic": {
+        "balanced_accuracy": 0.9787,
+        "recall_real": 0.9574,
+        "recall_synthetic": 1.0,
+        "n_test": 303,
+        "f1_synthetic": 0.9961,
+        "roc_auc": 0.9924,
+        "confusion_matrix(real,synthetic)": [
+          [
+            45,
+            2
+          ],
+          [
+            0,
+            256
+          ]
+        ]
+      }
+    },
+    "random_forest|no_mfcc_mean": {
+      "selection_score": 0.7246,
+      "loso": {
+        "score": 0.6159,
+        "macro_recall_real": 0.2318,
+        "recall_synthetic": 1.0,
+        "per_speaker": {
+          "ljspeech": {
+            "recall_real": 0.0938,
+            "recall_synthetic": 1.0,
+            "n_real": 32
+          },
+          "other_speakers": {
+            "recall_real": 0.0,
+            "recall_synthetic": 1.0,
+            "n_real": 3
+          },
+          "sbspk1": {
+            "recall_real": 0.8333,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          },
+          "sbspk2": {
+            "recall_real": 0.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          }
+        }
+      },
+      "loeo": {
+        "unseen_espeak": {
+          "balanced_accuracy": 0.9071,
+          "recall_real": 0.8298,
+          "recall_synthetic": 0.9844,
+          "n_test": 111,
+          "f1_synthetic": 0.9333,
+          "roc_auc": 0.9013,
+          "confusion_matrix(real,synthetic)": [
+            [
+              39,
+              8
+            ],
+            [
+              1,
+              63
+            ]
+          ]
+        },
+        "unseen_festival": {
+          "balanced_accuracy": 0.9149,
+          "recall_real": 0.8298,
+          "recall_synthetic": 1.0,
+          "n_test": 111,
+          "f1_synthetic": 0.9412,
+          "roc_auc": 0.9485,
+          "confusion_matrix(real,synthetic)": [
+            [
+              39,
+              8
+            ],
+            [
+              0,
+              64
+            ]
+          ]
+        },
+        "unseen_flite": {
+          "balanced_accuracy": 0.6779,
+          "recall_real": 0.9574,
+          "recall_synthetic": 0.3984,
+          "n_test": 175,
+          "f1_synthetic": 0.5635,
+          "roc_auc": 0.8517,
+          "confusion_matrix(real,synthetic)": [
+            [
+              45,
+              2
+            ],
+            [
+              77,
+              51
+            ]
+          ]
+        }
+      },
+      "grouped_cv_optimistic": {
+        "balanced_accuracy": 0.9149,
+        "recall_real": 0.8298,
+        "recall_synthetic": 1.0,
+        "n_test": 303,
+        "f1_synthetic": 0.9846,
+        "roc_auc": 0.9977,
+        "confusion_matrix(real,synthetic)": [
+          [
+            39,
+            8
+          ],
+          [
+            0,
+            256
+          ]
+        ]
+      }
+    },
+    "xgboost|no_mfcc_mean": {
+      "selection_score": 0.7824,
+      "loso": {
+        "score": 0.75,
+        "macro_recall_real": 0.5,
+        "recall_synthetic": 1.0,
+        "per_speaker": {
+          "ljspeech": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 32
+          },
+          "other_speakers": {
+            "recall_real": 0.0,
+            "recall_synthetic": 1.0,
+            "n_real": 3
+          },
+          "sbspk1": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          },
+          "sbspk2": {
+            "recall_real": 0.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          }
+        }
+      },
+      "loeo": {
+        "unseen_espeak": {
+          "balanced_accuracy": 0.9468,
+          "recall_real": 0.8936,
+          "recall_synthetic": 1.0,
+          "n_test": 111,
+          "f1_synthetic": 0.9624,
+          "roc_auc": 0.9498,
+          "confusion_matrix(real,synthetic)": [
+            [
+              42,
+              5
+            ],
+            [
+              0,
+              64
+            ]
+          ]
+        },
+        "unseen_festival": {
+          "balanced_accuracy": 0.7806,
+          "recall_real": 0.9362,
+          "recall_synthetic": 0.625,
+          "n_test": 111,
+          "f1_synthetic": 0.7477,
+          "roc_auc": 0.9412,
+          "confusion_matrix(real,synthetic)": [
+            [
+              44,
+              3
+            ],
+            [
+              24,
+              40
+            ]
+          ]
+        },
+        "unseen_flite": {
+          "balanced_accuracy": 0.717,
+          "recall_real": 0.9574,
+          "recall_synthetic": 0.4766,
+          "n_test": 175,
+          "f1_synthetic": 0.6387,
+          "roc_auc": 0.7553,
+          "confusion_matrix(real,synthetic)": [
+            [
+              45,
+              2
+            ],
+            [
+              67,
+              61
+            ]
+          ]
+        }
+      },
+      "grouped_cv_optimistic": {
+        "balanced_accuracy": 0.9574,
+        "recall_real": 0.9149,
+        "recall_synthetic": 1.0,
+        "n_test": 303,
+        "f1_synthetic": 0.9922,
+        "roc_auc": 0.9938,
+        "confusion_matrix(real,synthetic)": [
+          [
+            43,
+            4
+          ],
+          [
+            0,
+            256
+          ]
+        ]
+      }
+    },
+    "logistic_regression|no_mfcc_mean": {
+      "selection_score": 0.7355,
+      "loso": {
+        "score": 0.8633,
+        "macro_recall_real": 0.7422,
+        "recall_synthetic": 0.9844,
+        "per_speaker": {
+          "ljspeech": {
+            "recall_real": 0.9688,
+            "recall_synthetic": 0.9844,
+            "n_real": 32
+          },
+          "other_speakers": {
+            "recall_real": 0.6667,
+            "recall_synthetic": 0.9688,
+            "n_real": 3
+          },
+          "sbspk1": {
+            "recall_real": 1.0,
+            "recall_synthetic": 1.0,
+            "n_real": 6
+          },
+          "sbspk2": {
+            "recall_real": 0.3333,
+            "recall_synthetic": 0.9844,
+            "n_real": 6
+          }
+        }
+      },
+      "loeo": {
+        "unseen_espeak": {
+          "balanced_accuracy": 0.4759,
+          "recall_real": 0.9362,
+          "recall_synthetic": 0.0156,
+          "n_test": 111,
+          "f1_synthetic": 0.0294,
+          "roc_auc": 0.2045,
+          "confusion_matrix(real,synthetic)": [
+            [
+              44,
+              3
+            ],
+            [
+              63,
+              1
+            ]
+          ]
+        },
+        "unseen_festival": {
+          "balanced_accuracy": 0.7365,
+          "recall_real": 0.9574,
+          "recall_synthetic": 0.5156,
+          "n_test": 111,
+          "f1_synthetic": 0.6667,
+          "roc_auc": 0.8853,
+          "confusion_matrix(real,synthetic)": [
+            [
+              45,
+              2
+            ],
+            [
+              31,
+              33
+            ]
+          ]
+        },
+        "unseen_flite": {
+          "balanced_accuracy": 0.6105,
+          "recall_real": 0.9787,
+          "recall_synthetic": 0.2422,
+          "n_test": 175,
+          "f1_synthetic": 0.3875,
+          "roc_auc": 0.6197,
+          "confusion_matrix(real,synthetic)": [
+            [
+              46,
+              1
+            ],
+            [
+              97,
+              31
+            ]
+          ]
+        }
+      },
+      "grouped_cv_optimistic": {
+        "balanced_accuracy": 0.9796,
+        "recall_real": 0.9787,
+        "recall_synthetic": 0.9805,
+        "n_test": 303,
+        "f1_synthetic": 0.9882,
+        "roc_auc": 0.9892,
+        "confusion_matrix(real,synthetic)": [
+          [
+            46,
+            1
+          ],
+          [
+            5,
+            251
+          ]
+        ]
+      }
+    }
+  },
+  "leave_one_engine_out": {
+    "unseen_espeak": {
+      "balanced_accuracy": 0.9574,
+      "recall_real": 0.9149,
+      "recall_synthetic": 1.0,
+      "n_test": 111,
+      "f1_synthetic": 0.9697,
+      "roc_auc": 0.9651,
+      "confusion_matrix(real,synthetic)": [
+        [
+          43,
+          4
+        ],
+        [
+          0,
+          64
+        ]
+      ]
+    },
+    "unseen_festival": {
+      "balanced_accuracy": 0.9468,
+      "recall_real": 0.8936,
+      "recall_synthetic": 1.0,
+      "n_test": 111,
+      "f1_synthetic": 0.9624,
+      "roc_auc": 0.9661,
+      "confusion_matrix(real,synthetic)": [
+        [
+          42,
+          5
+        ],
+        [
+          0,
+          64
+        ]
+      ]
+    },
+    "unseen_flite": {
+      "balanced_accuracy": 0.8186,
+      "recall_real": 0.9574,
+      "recall_synthetic": 0.6797,
+      "n_test": 175,
+      "f1_synthetic": 0.8018,
+      "roc_auc": 0.8426,
+      "confusion_matrix(real,synthetic)": [
+        [
+          45,
+          2
+        ],
+        [
+          41,
+          87
+        ]
+      ]
+    }
+  },
+  "limitations": [
+    "Real class is only ~5 distinct speakers (LJSpeech + a few test-sample voices); add ASVspoof2019 bonafide (many speakers) and your own recordings before claiming real-world accuracy.",
+    "Synthetic class comes from classical TTS engines (espeak-ng, Flite, Festival), not neural voice cloning; performance on modern cloners (ElevenLabs, XTTS, OpenVoice) is NOT measured here.",
+    "All audio is band-limited to 8 kHz (telephone band) during feature extraction.",
+    "Text content is matched to the real clips for only 8/32 LJSpeech utterances (others use similar-style sentences).",
+    "Small dataset: treat metrics as pipeline validation, not a benchmark."
+  ]
+}

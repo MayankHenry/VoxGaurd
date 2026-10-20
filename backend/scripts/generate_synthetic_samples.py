@@ -1,90 +1,81 @@
 """
-Day 2: Synthetic (AI-generated) speech sample generation.
+Generate the SYNTHETIC class with two independent offline TTS engines.
 
-We generate the "synthetic" class ourselves using espeak-ng, an
-offline TTS engine, varying voice, pitch, and speaking rate to build
-diversity, since espeak-ng runs fully offline (no dataset-hosting
-domains reachable from this environment).
+Each real clip's transcript is re-spoken by every engine, so real and synthetic
+classes contain the SAME sentences (text content can't act as a shortcut) and the
+engines act as different "generators" for leave-one-engine-out evaluation.
 
-NOTE ON THE "real" CLASS: this script only produces the synthetic
-side of the dataset. The real-human-speech side must come from either
-(a) recordings the team makes themselves, or (b) a public corpus such
-as ASVspoof2019 / VCTK downloaded on a machine with normal internet
-access (see data/raw/real/README.md for exact instructions). This
-sandbox's network is restricted to a small domain allowlist that does
-not include Zenodo/OpenSLR/Kaggle, so it cannot fetch those directly.
+  family "espeak": espeak-ng  (formant synthesis)         - 2 voice variants
+  family "flite" : CMU Flite  (concatenative/HTS synth)   - 4 voices
+  family "festival": Festival diphone synthesis            - 2 voices (kal, el)
 
-Usage:
-    python scripts/generate_synthetic_samples.py
+Honest limitation: these are classical TTS engines, not neural voice cloning.
+Add ElevenLabs/Coqui/Bark/OpenVoice outputs (generated on your machine) to the
+same folder, named synth_<family>_<variant>_<uttid>.wav, to extend the benchmark.
+
+Usage:  python scripts/generate_synthetic_samples.py
+Requires: espeak-ng, flite, festival  (apt install espeak-ng flite festival festvox-kallpc16k festvox-ellpc11k)
 """
+import csv
 import subprocess
-import itertools
+import sys
+import tempfile
 from pathlib import Path
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "synthetic"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import librosa
+import soundfile as sf
+from app import config
 
-# A small varied sentence pool — deliberately includes different
-# sentence lengths/structures so extracted features aren't confounded
-# by text content alone.
-SENTENCES = [
-    "Hello, this is a verification call regarding your bank account.",
-    "Please confirm your identity by providing your date of birth.",
-    "The quarterly results will be announced next Monday morning.",
-    "I need you to transfer the funds immediately, it is urgent.",
-    "Can you hear me clearly on this line right now?",
-    "Your package could not be delivered due to an incorrect address.",
-    "We are calling from the technical support department today.",
-    "This message is to remind you about your upcoming appointment.",
-    "The weather today is expected to be partly cloudy with rain.",
-    "Thank you for calling, your call is important to us.",
-]
-
-# espeak-ng built-in voice variants (offline, no downloads needed)
-VOICES = ["en", "en-us", "en-gb"]
-PITCHES = [30, 50, 70]   # espeak-ng pitch range 0-99
-RATES = [140, 175, 210]  # words per minute
+ESPEAK_VARIANTS = {"a": ["-v", "en-us", "-p", "50", "-s", "170"],
+                   "b": ["-v", "en-gb", "-p", "35", "-s", "150"]}
+FLITE_VOICES = ["awb", "kal16", "rms", "slt"]
+FESTIVAL_VOICES = {"kal": "(voice_kal_diphone)", "el": "(voice_el_diphone)"}
+TARGET_SR = 16000
 
 
-def generate_all():
-    manifest = []
-    combos = list(itertools.product(VOICES, PITCHES, RATES))
-    sample_idx = 0
+def load_transcripts():
+    path = config.PROCESSED_DIR / "transcripts.csv"
+    if not path.exists():
+        print("No transcripts.csv - run scripts/fetch_dev_real_samples.py first.")
+        sys.exit(1)
+    with open(path, encoding="utf-8") as f:
+        return [(r["utt_id"], r["text"]) for r in csv.DictReader(f) if r["text"].strip()]
 
-    for sentence in SENTENCES:
-        # not every combo x every sentence (too many); rotate combos per sentence
-        voice, pitch, rate = combos[sample_idx % len(combos)]
-        sample_idx += 1
 
-        filename = f"synth_{sample_idx:03d}_{voice}_p{pitch}_r{rate}.wav"
-        out_path = OUTPUT_DIR / filename
+def save_standardised(tmp_wav: Path, out_path: Path):
+    y, _ = librosa.load(str(tmp_wav), sr=TARGET_SR, mono=True)  # same 16 kHz mono as real clips
+    sf.write(out_path, y, TARGET_SR)
 
-        cmd = [
-            "espeak-ng", sentence,
-            "-v", voice,
-            "-p", str(pitch),
-            "-s", str(rate),
-            "-w", str(out_path),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"FAILED: {filename} -> {result.stderr}")
-            continue
 
-        manifest.append({
-            "filename": filename,
-            "label": "synthetic",
-            "source": "espeak-ng",
-            "voice": voice,
-            "pitch": pitch,
-            "rate_wpm": rate,
-            "text": sentence,
-        })
-        print(f"Generated: {filename}")
-
-    return manifest
+def main():
+    items = load_transcripts()
+    for old in config.SYNTH_DIR.glob("synth_*.wav"):
+        old.unlink()
+    made, failed = 0, 0
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td) / "t.wav"
+        for utt, text in items:
+            jobs = []
+            for var, args in ESPEAK_VARIANTS.items():
+                jobs.append((f"espeak_{var}_{utt}", ["espeak-ng", *args, "-w", str(tmp), text]))
+            for voice in FLITE_VOICES:
+                jobs.append((f"flite_{voice}_{utt}", ["flite", "-voice", voice, "-t", text, "-o", str(tmp)]))
+            txt = Path(td) / "t.txt"
+            txt.write_text(text, encoding="utf-8")
+            for vname, scheme in FESTIVAL_VOICES.items():
+                jobs.append((f"festival_{vname}_{utt}", ["text2wave", "-eval", scheme, str(txt), "-o", str(tmp)]))
+            for name, cmd in jobs:
+                r = subprocess.run(cmd, capture_output=True, text=True)
+                if r.returncode != 0 or not tmp.exists():
+                    failed += 1
+                    print(f"FAILED {name}: {r.stderr.strip()[:80]}")
+                    continue
+                save_standardised(tmp, config.SYNTH_DIR / f"synth_{name}.wav")
+                tmp.unlink()
+                made += 1
+    print(f"Synthetic clips generated: {made} (failed {failed}) -> {config.SYNTH_DIR}")
 
 
 if __name__ == "__main__":
-    manifest = generate_all()
-    print(f"\nDone. Generated {len(manifest)} synthetic samples in {OUTPUT_DIR}")
+    main()

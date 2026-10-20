@@ -1,22 +1,34 @@
 """
 Audio feature extraction for VoxGuard.
 
-Day 1 scope: get a clean, tested feature-extraction function working
-on a single audio file. This is the foundation the Day 4-7 classifier
-training will consume — so it's built and unit-tested first, before
-any model code, to avoid debugging both at once later.
-
-Features extracted (grounded in known TTS/voice-clone artifacts):
-- MFCCs (13 coefficients + deltas): captures timbre/spectral envelope
-- Spectral flatness: synthetic speech tends to be spectrally "flatter"
-- Pitch (f0) stability: real speech has natural micro-variation in
-  pitch; many TTS systems produce unnaturally smooth f0 contours
-- Spectral centroid & bandwidth: cloned voices often show subtly
-  different high-frequency energy distribution
+Design decisions (each one removes a way a classifier could "cheat"):
+- Audio is loaded at FEATURE_SR = 8 kHz ("telephone band"). VoxGuard targets
+  phone-call audio, and this also guarantees a 22 kHz studio recording and an
+  8 kHz TTS file have identical bandwidth, so bandwidth/sample-rate can't be
+  used as a shortcut for real-vs-synthetic.
+- Signal is peak-normalised so loudness differences can't leak into MFCC0 etc.
+- Features are chosen from known TTS/voice-clone artefacts: spectral
+  smoothness (flatness), pitch micro-variation (jitter proxy), dynamic range
+  (RMS std), voiced ratio, plus MFCC timbre statistics.
 """
 from dataclasses import dataclass, asdict
 import numpy as np
 import librosa
+
+FEATURE_SR = 8000
+N_MFCC = 13
+
+SCALAR_NAMES = [
+    "spectral_flatness_mean", "spectral_centroid_mean", "spectral_bandwidth_mean",
+    "pitch_mean", "pitch_std",
+    "spectral_rolloff_mean", "zcr_mean", "rms_mean", "rms_std",
+    "voiced_ratio", "f0_jitter",
+]
+FEATURE_NAMES = (
+    [f"mfcc_mean_{i}" for i in range(N_MFCC)]
+    + [f"mfcc_std_{i}" for i in range(N_MFCC)]
+    + SCALAR_NAMES
+)
 
 
 @dataclass
@@ -28,34 +40,24 @@ class AudioFeatures:
     spectral_bandwidth_mean: float
     pitch_mean: float
     pitch_std: float
+    spectral_rolloff_mean: float
+    zcr_mean: float
+    rms_mean: float
+    rms_std: float
+    voiced_ratio: float
+    f0_jitter: float
     duration_sec: float
 
     def to_vector(self) -> np.ndarray:
-        """Flatten into a single feature vector for classifier input."""
-        return np.concatenate([
-            self.mfcc_mean,
-            self.mfcc_std,
-            [
-                self.spectral_flatness_mean,
-                self.spectral_centroid_mean,
-                self.spectral_bandwidth_mean,
-                self.pitch_mean,
-                self.pitch_std,
-            ],
-        ]).astype(np.float32)
+        scalars = [getattr(self, n) for n in SCALAR_NAMES]
+        return np.concatenate([self.mfcc_mean, self.mfcc_std, scalars]).astype(np.float32)
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def extract_features(file_path: str, sr: int = 16000, n_mfcc: int = 13) -> AudioFeatures:
-    """
-    Load an audio file and extract the feature set used for
-    real-vs-synthetic classification.
-
-    Raises:
-        RuntimeError if the file can't be loaded or is silent/empty.
-    """
+def extract_features(file_path: str, sr: int = FEATURE_SR, n_mfcc: int = N_MFCC) -> AudioFeatures:
+    """Load an audio file and compute the feature set. Raises RuntimeError on bad audio."""
     try:
         y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
     except Exception as e:
@@ -64,30 +66,40 @@ def extract_features(file_path: str, sr: int = 16000, n_mfcc: int = 13) -> Audio
     if y.size == 0 or np.max(np.abs(y)) < 1e-6:
         raise RuntimeError(f"Audio file '{file_path}' is empty or silent.")
 
+    y = y / np.max(np.abs(y))  # peak-normalise
     duration_sec = len(y) / loaded_sr
 
     mfcc = librosa.feature.mfcc(y=y, sr=loaded_sr, n_mfcc=n_mfcc)
-    mfcc_mean = np.mean(mfcc, axis=1)
-    mfcc_std = np.std(mfcc, axis=1)
+    flat = librosa.feature.spectral_flatness(y=y)
+    cent = librosa.feature.spectral_centroid(y=y, sr=loaded_sr)
+    bw = librosa.feature.spectral_bandwidth(y=y, sr=loaded_sr)
+    roll = librosa.feature.spectral_rolloff(y=y, sr=loaded_sr)
+    zcr = librosa.feature.zero_crossing_rate(y)
+    rms = librosa.feature.rms(y=y)
 
-    spectral_flatness = librosa.feature.spectral_flatness(y=y)
-    spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=loaded_sr)
-    spectral_bandwidth = librosa.feature.spectral_bandwidth(y=y, sr=loaded_sr)
-
-    f0, voiced_flag, _ = librosa.pyin(
-        y, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7")
-    )
-    voiced_f0 = f0[voiced_flag] if voiced_flag is not None else np.array([])
-    pitch_mean = float(np.nanmean(voiced_f0)) if voiced_f0.size > 0 else 0.0
-    pitch_std = float(np.nanstd(voiced_f0)) if voiced_f0.size > 0 else 0.0
+    f0, voiced_flag, _ = librosa.pyin(y, fmin=60, fmax=400, sr=loaded_sr)
+    voiced_ratio = float(np.mean(voiced_flag)) if voiced_flag is not None and len(voiced_flag) else 0.0
+    vf0 = f0[voiced_flag] if voiced_flag is not None else np.array([])
+    vf0 = vf0[~np.isnan(vf0)]
+    if vf0.size > 2:
+        pitch_mean, pitch_std = float(np.mean(vf0)), float(np.std(vf0))
+        f0_jitter = float(np.mean(np.abs(np.diff(vf0))) / max(pitch_mean, 1e-6))
+    else:
+        pitch_mean = pitch_std = f0_jitter = 0.0
 
     return AudioFeatures(
-        mfcc_mean=mfcc_mean.tolist(),
-        mfcc_std=mfcc_std.tolist(),
-        spectral_flatness_mean=float(np.mean(spectral_flatness)),
-        spectral_centroid_mean=float(np.mean(spectral_centroid)),
-        spectral_bandwidth_mean=float(np.mean(spectral_bandwidth)),
+        mfcc_mean=np.mean(mfcc, axis=1).tolist(),
+        mfcc_std=np.std(mfcc, axis=1).tolist(),
+        spectral_flatness_mean=float(np.mean(flat)),
+        spectral_centroid_mean=float(np.mean(cent)),
+        spectral_bandwidth_mean=float(np.mean(bw)),
         pitch_mean=pitch_mean,
         pitch_std=pitch_std,
+        spectral_rolloff_mean=float(np.mean(roll)),
+        zcr_mean=float(np.mean(zcr)),
+        rms_mean=float(np.mean(rms)),
+        rms_std=float(np.std(rms)),
+        voiced_ratio=voiced_ratio,
+        f0_jitter=f0_jitter,
         duration_sec=float(duration_sec),
     )
