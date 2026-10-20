@@ -86,7 +86,95 @@ subset on a personal machine and drop the files into
 Re-run `python scripts/build_manifest.py` afterward to regenerate the
 manifest with both classes.
 
-### Day 3 — (not started)
+### Day 3 — Training Harness + EDA (Pipeline Verified, Not Yet Trained) ✅
+
+**Goal:** Build the model training/evaluation code so it's ready the
+moment real-speech samples land — without producing any fake or
+misleading accuracy numbers in the meantime.
+
+**Done:**
+- `scripts/explore_features.py` — EDA on the manifest: class balance,
+  zero-variance feature check, NaN check, saves a feature-distribution
+  plot. **Run and verified:** confirmed no NaNs and no dead features
+  in the current 10-sample synthetic set; correctly printed a warning
+  that class-separation analysis isn't possible with one class only.
+- `scripts/train_model.py` — train/test split (stratified), feature
+  scaling, RandomForest baseline, full evaluation report (accuracy,
+  F1, confusion matrix), model saved via joblib. Includes an explicit
+  `validate_dataset()` guard that **refuses to train** if fewer than
+  2 classes or fewer than 5 samples/class are present, rather than
+  silently returning a meaningless metric.
+
+**Verified today:**
+- Ran `train_model.py` against the real (synthetic-only) manifest →
+  correctly refused with a clear explanation and exit code 1, instead
+  of reporting a fake "100% accuracy."
+- Separately exercised the actual training code path (split → scale →
+  fit → evaluate → save) against a throwaway fabricated two-class
+  dataset, purely to confirm the mechanics work — got a sane ~40%
+  accuracy on what's essentially noise, which is exactly what should
+  happen and confirms the model isn't trivially overfitting to some
+  pipeline artifact. That throwaway model/data was deleted — nothing
+  fake is committed to the repo.
+
+**Still blocked on the same thing as Day 2:** real-class samples.
+**Action item unchanged:** add ~30-40 real speech samples to
+`backend/data/raw/real/` (record or download — see the README there),
+then run `build_manifest.py` followed by `train_model.py` for the
+first real training run.
+
+### Day 4 — Real-Sample Intake Pipeline (Verified with Simulated Messy Data) ✅
+
+**Context:** team has started recording real speech but hasn't
+organized it yet — raw phone/laptop recordings typically come in
+inconsistent formats and sample rates, and can include accidental
+silent or too-short clips.
+
+**Goal:** build the intake step that turns "pile of raw recordings"
+into clean, validated, consistently-formatted files in
+`data/raw/real/`, so dropping in messy recordings doesn't quietly
+poison the dataset (e.g. the classifier learning "44kHz vs 16kHz" as
+a fake signal instead of an actual voice-cloning artifact).
+
+**Done:**
+- `scripts/prepare_real_samples.py` — takes a staging folder of raw
+  recordings (any of wav/mp3/m4a/flac/ogg), validates each one
+  (loads correctly, not silent, 1-30s duration), resamples everything
+  to 16kHz mono (matching the synthetic samples' format so sample
+  rate can't leak as a spurious signal), and copies accepted files
+  into `data/raw/real/` with a systematic `real_<speaker>_NNN.wav`
+  naming scheme.
+
+**Verified today (with simulated messy data, since real recordings
+weren't uploaded to this environment):**
+- Built a deliberately messy test batch: a 44.1kHz recording, an
+  8kHz recording, a silent file, and a 0.3s accidental clip
+- Ran the intake script → correctly **accepted** both real recordings
+  and resampled them to a verified 16kHz, correctly **rejected** the
+  silent and too-short files with clear reasons
+- Rebuilt the manifest with the 2 accepted samples → correctly
+  detected 2 real + 10 synthetic
+- Ran `train_model.py` → correctly refused again, this time for a
+  different reason ("real: 2, below minimum 5") — confirming the
+  Day 3 safety guard catches *both* the single-class case and the
+  too-few-samples-per-class case
+- Deleted the simulated test recordings afterward — they were
+  synthetic stand-ins for testing the script, not real human speech,
+  so nothing fake is in the repo
+
+**Action item unchanged, now with a tool ready for it:** record
+~30-40 real clips (5-10 sentences each, ideally from more than one
+speaker — Mayank + Radhika together gets there faster), drop the raw
+files anywhere, then run:
+```
+python scripts/prepare_real_samples.py --input <your_raw_recordings_folder> --speaker mayank
+python scripts/build_manifest.py
+python scripts/train_model.py
+```
+That last command will be the **first real trained model** once
+there are 5+ real samples.
+
+### Day 5 — (not started)
 
 ## Tech Stack
 - Backend: FastAPI, librosa/torchaudio for audio processing

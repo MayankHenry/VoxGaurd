@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-sans: "Instrument Sans", system-ui, sans-serif;
+  --color-ink: #0a0f24;
+  --color-panel: #121a38;
+  --color-line: #232e5a;
+  --color-mist: #e6eaff;
+  --color-dim: #8e9acb;
+  --color-human: #5eead4;
+  --color-synth: #ff5d8f;
+}
+
+body { background: radial-gradient(1200px 600px at 70% -10%, #1a2660 0%, var(--color-ink) 60%); color: var(--color-mist); font-family: var(--font-sans); min-height: 100vh; }
+:focus-visible { outline: 2px solid var(--color-human); outline-offset: 3px; }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgb(255 93 143 / .55); } 100% { box-shadow: 0 0 0 22px rgb(255 93 143 / 0); } }
+.rec { animation: pulse-ring 1.2s ease-out infinite; }
+@media (prefers-reduced-motion: reduce) { .rec { animation: none; } }
