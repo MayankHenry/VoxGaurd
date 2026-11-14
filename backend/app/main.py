@@ -5,16 +5,16 @@ Endpoints
   GET  /health                 liveness + whether a trained model is loaded
   GET  /model/info             model version, selection + evaluation report, limitations
   POST /predict                upload audio -> verdict (audio deleted right after analysis)
-  POST /upload                 store audio, returns sample_id
-  POST /predict/{sample_id}    analyse a previously uploaded sample (404 if unknown)
+  POST /upload                 store audio temporarily, returns sample_id (purged after analysis / 1 h)
+  POST /predict/{sample_id}    analyse an uploaded sample, then delete it (404 if unknown)
   GET  /history                recent predictions (results only, never audio)
   GET  /stats                  latency statistics (for the p95 NFR)
 
 Error codes: 400 bad input (type / duration), 404 unknown sample, 413 file too large,
 422 undecodable or silent audio, 503 model not trained yet.
 """
-import shutil
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from . import config, db
 from .inference import ModelNotReady, service
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 
 app = FastAPI(title="VoxGuard API", version=APP_VERSION,
               description="Detects whether an audio clip is human speech or AI-generated/synthetic.")
@@ -33,6 +33,14 @@ app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_meth
 
 
 # ---------- helpers ----------
+def _purge_old_uploads():
+    """Privacy: never keep stored audio longer than UPLOAD_TTL_SEC."""
+    cutoff = time.time() - config.UPLOAD_TTL_SEC
+    for f in config.UPLOAD_DIR.iterdir():
+        if f.is_file() and f.stat().st_mtime < cutoff:
+            f.unlink(missing_ok=True)
+
+
 def _save_upload(file: UploadFile, dest_dir: Path, stem: str) -> Path:
     ext = Path(file.filename or "").suffix.lower()
     if ext not in config.ALLOWED_EXTENSIONS:
@@ -92,6 +100,7 @@ async def predict(file: UploadFile = File(...)):
 
 @app.post("/upload")
 async def upload_audio(file: UploadFile = File(...)):
+    _purge_old_uploads()
     sample_id = str(uuid.uuid4())
     dest = _save_upload(file, config.UPLOAD_DIR, sample_id)
     return {"sample_id": sample_id, "filename": file.filename, "status": "received", "stored_as": dest.name}
@@ -106,7 +115,10 @@ def predict_stored(sample_id: str):
     matches = list(config.UPLOAD_DIR.glob(f"{sample_id}.*"))
     if not matches:
         raise HTTPException(404, "Unknown sample_id.")
-    return _analyse(matches[0], matches[0].name)
+    try:
+        return _analyse(matches[0], matches[0].name)
+    finally:  # privacy: the stored clip is deleted as soon as it has been analysed
+        matches[0].unlink(missing_ok=True)
 
 
 @app.get("/history")

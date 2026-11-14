@@ -20,6 +20,7 @@ MAX_UPLOAD_BYTES = int(os.getenv("VOXGUARD_MAX_UPLOAD_MB", "10")) * 1024 * 1024
 MIN_DURATION_SEC = 1.0
 MAX_DURATION_SEC = 30.0
 UNCERTAIN_BAND = float(os.getenv("VOXGUARD_UNCERTAIN_BAND", "0.65"))  # max-prob below this => "uncertain"
+UPLOAD_TTL_SEC = int(os.getenv("VOXGUARD_UPLOAD_TTL_SEC", "3600"))  # stale /upload files are purged
 CORS_ORIGINS = os.getenv("VOXGUARD_CORS_ORIGINS", "*").split(",")
 
 for d in (RAW_DIR, REAL_DIR, SYNTH_DIR, UPLOAD_DIR, PROCESSED_DIR, MODEL_DIR):

@@ -56,17 +56,23 @@ class AudioFeatures:
         return asdict(self)
 
 
-def extract_features(file_path: str, sr: int = FEATURE_SR, n_mfcc: int = N_MFCC) -> AudioFeatures:
-    """Load an audio file and compute the feature set. Raises RuntimeError on bad audio."""
+def load_audio(file_path: str, sr: int = FEATURE_SR) -> np.ndarray:
+    """Decode any supported audio file to a mono float signal at the telephone-band rate."""
     try:
-        y, loaded_sr = librosa.load(file_path, sr=sr, mono=True)
+        y, _ = librosa.load(file_path, sr=sr, mono=True)
     except Exception as e:
         raise RuntimeError(f"Failed to load audio file '{file_path}': {e}")
+    return y
 
+
+def features_from_array(y: np.ndarray, sr: int = FEATURE_SR, n_mfcc: int = N_MFCC,
+                        source: str = "signal") -> AudioFeatures:
+    """Compute the feature set from an in-memory signal. Raises RuntimeError on empty/silent audio."""
     if y.size == 0 or np.max(np.abs(y)) < 1e-6:
-        raise RuntimeError(f"Audio file '{file_path}' is empty or silent.")
+        raise RuntimeError(f"Audio '{source}' is empty or silent.")
 
     y = y / np.max(np.abs(y))  # peak-normalise
+    loaded_sr = sr
     duration_sec = len(y) / loaded_sr
 
     mfcc = librosa.feature.mfcc(y=y, sr=loaded_sr, n_mfcc=n_mfcc)
@@ -103,3 +109,8 @@ def extract_features(file_path: str, sr: int = FEATURE_SR, n_mfcc: int = N_MFCC)
         f0_jitter=f0_jitter,
         duration_sec=float(duration_sec),
     )
+
+
+def extract_features(file_path: str, sr: int = FEATURE_SR, n_mfcc: int = N_MFCC) -> AudioFeatures:
+    """Load an audio file and compute the feature set. Raises RuntimeError on bad audio."""
+    return features_from_array(load_audio(file_path, sr), sr, n_mfcc, source=file_path)

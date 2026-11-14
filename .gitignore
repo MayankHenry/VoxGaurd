@@ -5,3 +5,11 @@ data/raw/uploads/
 *.wav
 *.png
 *.joblib
+
+# keep the small trained model + report so the API/frontend run straight after cloning
+!backend/models/voxguard_model.joblib
+!backend/models/model_metrics.json
+backend/data/holdout/
+backend/data/voxguard.db
+.pytest_cache/
+demo_fakes/

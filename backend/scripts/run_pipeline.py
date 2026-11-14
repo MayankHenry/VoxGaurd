@@ -4,6 +4,10 @@ One command to rebuild everything: fetch real clips -> generate synthetic -> man
     python scripts/run_pipeline.py              # full run (needs internet + git + TTS engines)
     python scripts/run_pipeline.py --train-only # reuse committed manifest.csv (no audio / TTS needed)
 
+Extra data (run separately, then rebuild the manifest and retrain):
+    python scripts/import_asvspoof.py ...         # many real speakers + attacks A01-A06 (see its docstring)
+    python scripts/generate_neural_samples.py     # neural TTS voices (edge-tts)
+
 TTS engines (Linux/WSL/macOS): espeak-ng, flite, festival (text2wave).
   sudo apt install espeak-ng flite festival festvox-kallpc16k festvox-ellpc11k
 On plain Windows use WSL for the data-generation steps, or --train-only.
@@ -15,11 +19,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 STEPS = [
-    ("Fetch real clips (LJSpeech)", "fetch_dev_real_samples.py"),
-    ("Fetch extra real speakers", "fetch_extra_real_speakers.py"),
-    ("Generate synthetic clips", "generate_synthetic_samples.py"),
-    ("Build feature manifest", "build_manifest.py"),
-    ("Train + evaluate", "train_model.py"),
+    ("Fetch real clips (LJSpeech)", ["fetch_dev_real_samples.py"]),
+    ("Fetch extra real speakers", ["fetch_extra_real_speakers.py"]),
+    ("Generate synthetic clips", ["generate_synthetic_samples.py"]),
+    ("Build feature manifest (+ phone-channel augmentation)", ["build_manifest.py", "--augment"]),
+    ("Train + evaluate", ["train_model.py"]),
 ]
 
 
@@ -30,10 +34,10 @@ def main():
         if missing:
             print(f"Missing tools: {missing}\nInstall them (see docstring) or use --train-only.")
             sys.exit(1)
-    for title, script in (STEPS[-1:] if train_only else STEPS):
+    for title, cmd in (STEPS[-1:] if train_only else STEPS):
         print(f"\n=== {title} ===")
-        if subprocess.run([sys.executable, str(HERE / script)]).returncode != 0:
-            print(f"Step failed: {script}")
+        if subprocess.run([sys.executable, str(HERE / cmd[0]), *cmd[1:]]).returncode != 0:
+            print(f"Step failed: {cmd[0]}")
             sys.exit(1)
     print("\nDone. Start the API:  uvicorn app.main:app --reload")
 

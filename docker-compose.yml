@@ -1,0 +1,21 @@
+# One command to run the whole app:  docker compose up --build
+#   frontend -> http://localhost:8080      backend API -> http://localhost:8000/docs
+services:
+  backend:
+    build: ./backend
+    ports: ["8000:8000"]
+    environment:
+      VOXGUARD_CORS_ORIGINS: "http://localhost:8080"
+    volumes:
+      - voxguard-db:/var/lib/voxguard
+    restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: "http://localhost:8000"
+    ports: ["8080:80"]
+    depends_on: [backend]
+    restart: unless-stopped
+volumes:
+  voxguard-db:

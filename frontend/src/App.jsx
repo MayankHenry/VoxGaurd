@@ -4,6 +4,17 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 const MAX_SEC = 30; // the training pipeline accepts 1-30s clips
 const BARS = 160;
 
+/* ---------- helpers ---------- */
+const NICE = {
+  spectral_flatness_mean: "Spectral smoothness", spectral_centroid_mean: "Voice brightness",
+  spectral_bandwidth_mean: "Spectral spread", spectral_rolloff_mean: "High-frequency energy",
+  pitch_mean: "Average pitch", pitch_std: "Pitch variation", f0_jitter: "Pitch micro-variation",
+  voiced_ratio: "Share of voiced speech", rms_mean: "Average loudness", rms_std: "Loudness dynamics",
+  zcr_mean: "Noisiness",
+};
+const niceName = (f) => NICE[f] || (f.startsWith("mfcc_std") ? "Timbre variation" : f.startsWith("mfcc_mean") ? "Voice timbre" : f);
+const UNSURE = "#fbbf24";
+
 /* ---------- audio helpers ---------- */
 const peaksOf = (pcm, n = BARS) => {
   const step = Math.max(1, Math.floor(pcm.length / n));
@@ -58,6 +69,7 @@ export default function App() {
   const [msg, setMsg] = useState("");
   const [secs, setSecs] = useState(0);
   const [drag, setDrag] = useState(false);
+  const [history, setHistory] = useState([]);
 
   const canvas = useRef(null);
   const live = useRef([]);
@@ -67,20 +79,31 @@ export default function App() {
     fetch(`${API}/health`).then((r) => setOnline(r.ok)).catch(() => setOnline(false));
   }, []);
 
-  const verdictFake = result && /fake|synth|spoof|ai/i.test(result.label);
-  const color = phase === "recording" ? "#ff5d8f" : result ? (verdictFake ? "#ff5d8f" : "#5eead4") : "#8fa2ff";
+  useEffect(() => {
+    fetch(`${API}/history?limit=5`).then((r) => r.json()).then((d) => setHistory(d.items || [])).catch(() => {});
+  }, [result]);
+
+  const unsure = result?.verdict === "uncertain";
+  const verdictFake = result && !unsure && /fake|synth|spoof|ai/i.test(result.label);
+  const color = phase === "recording" ? "#ff5d8f" : result ? (unsure ? UNSURE : verdictFake ? "#ff5d8f" : "#5eead4") : "#8fa2ff";
 
   useEffect(() => {
     if (canvas.current && phase !== "recording") drawBars(canvas.current, clip?.peaks ?? [], color);
   }, [clip, color, phase]);
 
-  async function load(blob, name) {
+  async function load(blob, name, fromFile = false) {
     setResult(null); setMsg("");
     try {
       const c = await toWav16k(blob);
       if (c.duration < 1 || c.duration > MAX_SEC + 1) throw new Error(`Clip is ${c.duration.toFixed(1)}s. Use 1 to ${MAX_SEC} seconds.`);
       setClip({ ...c, name }); setPhase("ready");
     } catch (e) {
+      if (fromFile && !(e.message || "").startsWith("Clip is")) {
+        // The browser cannot decode this file, but the server reads more formats: send it as-is, no preview.
+        setClip({ wav: blob, peaks: [], duration: null, name, raw: true }); setPhase("ready");
+        setMsg("Your browser could not preview this file, so it will be sent as it is. The server will check it.");
+        return;
+      }
       setClip(null); setPhase("error"); setMsg(e.message || "Could not read this audio file.");
     }
   }
@@ -122,19 +145,15 @@ export default function App() {
     setPhase("analyzing"); setMsg("");
     try {
       const fd = new FormData();
-      fd.append("file", clip.wav, (clip.name || "clip").replace(/\.\w+$/, "") + ".wav");
+      const base = (clip.name || "clip").replace(/\.\w+$/, "");
+      const ext = clip.raw ? ((clip.name || "").match(/\.\w+$/)?.[0] ?? ".wav") : ".wav";
+      fd.append("file", clip.wav, base + ext);
       const up = await fetch(`${API}/upload`, { method: "POST", body: fd });
       if (!up.ok) throw new Error((await up.json().catch(() => ({}))).detail || "Upload failed.");
       const { sample_id } = await up.json();
-      // Expected contract (not in the backend yet): POST /predict/{sample_id} -> { label: "real" | "fake", confidence: 0..1 }
       const pr = await fetch(`${API}/predict/${sample_id}`, { method: "POST" });
-      if (pr.status === 404) {
-        setPhase("ready");
-        setMsg("Clip uploaded, but the backend has no /predict endpoint yet, so there is no verdict to show.");
-        return;
-      }
-      if (!pr.ok) throw new Error("The model could not analyse this clip.");
-      setResult(await pr.json()); setPhase("done");
+      if (!pr.ok) throw new Error((await pr.json().catch(() => ({}))).detail || "The model could not analyse this clip.");
+      setResult(await pr.json()); setPhase("done"); setMsg("");
     } catch (e) {
       setPhase("error"); setMsg(e.message?.includes("fetch") ? `Cannot reach the API at ${API}. Is the backend running?` : e.message);
     }
@@ -163,7 +182,7 @@ export default function App() {
       <section
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
-        onDrop={(e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f && !busy) load(f, f.name); }}
+        onDrop={(e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f && !busy) load(f, f.name, true); }}
         className={`mt-10 rounded-3xl border bg-panel/70 p-5 backdrop-blur sm:p-8 ${drag ? "border-human" : "border-line"}`}
       >
         <canvas ref={canvas} className="h-40 w-full sm:h-56" aria-label="Audio waveform" />
@@ -180,7 +199,7 @@ export default function App() {
           )}
           <label className={`flex h-14 cursor-pointer items-center rounded-full border border-line px-6 font-medium transition hover:border-dim ${busy ? "pointer-events-none opacity-40" : ""}`}>
             Upload audio
-            <input type="file" accept=".wav,.mp3,.m4a,.flac" hidden onChange={(e) => e.target.files[0] && load(e.target.files[0], e.target.files[0].name)} />
+            <input type="file" accept=".wav,.mp3,.m4a,.flac" hidden onChange={(e) => e.target.files[0] && load(e.target.files[0], e.target.files[0].name, true)} />
           </label>
           <button
             disabled={!clip || busy}
@@ -191,7 +210,7 @@ export default function App() {
           </button>
         </div>
         <p className="mt-4 text-sm text-dim">
-          {clip ? `${clip.name} · ${clip.duration.toFixed(1)}s, converted to 16 kHz mono` : `WAV, MP3, M4A or FLAC, 1 to ${MAX_SEC} seconds. Dropping a file here works too.`}
+          {clip ? (clip.duration != null ? `${clip.name} · ${clip.duration.toFixed(1)}s, converted to 16 kHz mono` : `${clip.name} · will be sent as it is`) : `WAV, MP3, M4A or FLAC, 1 to ${MAX_SEC} seconds. Dropping a file here works too.`}
         </p>
         {msg && <p role="alert" className="mt-3 rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm">{msg}</p>}
       </section>
@@ -199,12 +218,44 @@ export default function App() {
       {result && (
         <section className="mt-6 rounded-3xl border p-6 sm:p-8" style={{ borderColor: color, background: `${color}14` }}>
           <p className="font-display text-3xl font-bold sm:text-4xl" style={{ color }}>
-            {verdictFake ? "This sounds AI-generated" : "This sounds like a real person"}
+            {unsure ? "Not sure about this one" : verdictFake ? "This sounds AI-generated" : "This sounds like a real person"}
           </p>
           <div className="mt-5 h-3 overflow-hidden rounded-full bg-ink/70" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
           </div>
-          <p className="mt-3 text-dim">Model confidence {pct}%. Treat this as a signal, not proof, especially on noisy phone-call audio.</p>
+          <p className="mt-3 text-dim">
+            {unsure ? `The model is only ${pct}% confident either way, so it is not giving a verdict. ` : `Model confidence ${pct}%. `}
+            Treat this as a signal, not proof, especially on noisy phone-call audio.
+          </p>
+          {result.top_signals?.length > 0 && (
+            <div className="mt-5">
+              <p className="text-sm font-semibold">What the model noticed</p>
+              <ul className="mt-2 space-y-1 text-sm text-dim">
+                {result.top_signals.map((t) => (
+                  <li key={t.feature}>{niceName(t.feature)} · {t.direction}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {result.latency_ms != null && (
+            <p className="mt-4 text-xs text-dim">Analysed in {Math.round(result.latency_ms)} ms · model {result.model_version}</p>
+          )}
+        </section>
+      )}
+
+      {history.length > 0 && (
+        <section className="mt-6 rounded-3xl border border-line bg-panel/70 p-5 sm:p-6" aria-label="Recent checks">
+          <p className="text-sm font-semibold">Recent checks</p>
+          <ul className="mt-3 divide-y divide-line text-sm">
+            {history.map((h) => (
+              <li key={h.id} className="flex items-center justify-between gap-4 py-2">
+                <span className="truncate text-dim">{h.filename}</span>
+                <span className="shrink-0" style={{ color: h.verdict === "likely_synthetic" ? "#ff5d8f" : h.verdict === "likely_real" ? "#5eead4" : UNSURE }}>
+                  {h.verdict === "likely_synthetic" ? "AI-generated" : h.verdict === "likely_real" ? "Real" : "Unsure"} · {Math.round(h.synthetic_probability * 100)}% AI
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
     </main>

@@ -90,6 +90,18 @@ def test_oversize_413(client, tmp_path, monkeypatch):
 def test_upload_then_predict_by_id(client, tmp_path):
     up = _post(client, _wav(tmp_path / "u.wav"), "/upload").json()
     assert client.post(f"/predict/{up['sample_id']}").status_code == 200
+    # privacy: stored clip is deleted after analysis, so a second call is 404
+    assert list(config.UPLOAD_DIR.iterdir()) == []
+    assert client.post(f"/predict/{up['sample_id']}").status_code == 404
+
+
+def test_stale_uploads_are_purged(client, tmp_path):
+    import os, time
+    old = config.UPLOAD_DIR / "stale.wav"
+    old.write_bytes(b"x")
+    os.utime(old, (time.time() - 7200, time.time() - 7200))
+    _post(client, _wav(tmp_path / "n.wav"), "/upload")
+    assert not old.exists()
 
 
 def test_unknown_and_malicious_sample_ids_404(client):
