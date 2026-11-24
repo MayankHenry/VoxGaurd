@@ -1,4 +1,5 @@
-const fake = (v) => /fake|synth|spoof|ai/i.test(v.label);
+const unsure = (v) => v.verdict === "uncertain";
+const fake = (v) => !unsure(v) && /fake|synth|spoof|ai/i.test(v.label);
 
 export default function History({ items, onClear, onDetect }) {
   if (!items.length)
@@ -21,11 +22,11 @@ export default function History({ items, onClear, onDetect }) {
           <li key={it.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
             <div className="min-w-0">
               <p className="truncate font-medium">{it.name}</p>
-              <p className="text-sm text-dim">{new Date(it.at).toLocaleString()} · {it.duration.toFixed(1)}s</p>
+              <p className="text-sm text-dim">{new Date(it.at).toLocaleString()}{it.duration ? ` · ${it.duration.toFixed(1)}s` : ""}</p>
             </div>
             {it.verdict ? (
-              <span className="rounded-full px-4 py-1.5 text-sm font-semibold text-ink" style={{ background: fake(it.verdict) ? "#ff5d8f" : "#5eead4" }}>
-                {fake(it.verdict) ? "AI-generated" : "Real"} · {Math.round(it.verdict.confidence * 100)}%
+              <span className="rounded-full px-4 py-1.5 text-sm font-semibold text-ink" style={{ background: unsure(it.verdict) ? "#fbbf24" : fake(it.verdict) ? "#ff5d8f" : "#5eead4" }}>
+                {unsure(it.verdict) ? "Unsure" : fake(it.verdict) ? "AI-generated" : "Real"} · {Math.round(it.verdict.confidence * 100)}%
               </span>
             ) : (
               <span className="rounded-full border border-line px-4 py-1.5 text-sm text-dim">Uploaded, no verdict yet</span>
